@@ -369,6 +369,15 @@ function getPrimaryLanAddress() {
   return "127.0.0.1";
 }
 
+function getDefaultGatewayAddress() {
+  try {
+    const { gateway4sync } = require("default-gateway");
+    return gateway4sync().gateway;
+  } catch {
+    return null;
+  }
+}
+
 function checkPort(port) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host: "127.0.0.1", port, timeout: 400 });
@@ -431,6 +440,25 @@ function getDirectSnapshot(port) {
     method: state.direct.method,
     lastError: state.direct.lastError,
     checkedAt: state.direct.checkedAt
+  };
+}
+
+function getManualPortForwardInfo(port) {
+  const gateway = getDefaultGatewayAddress();
+  const localIp = getPrimaryLanAddress();
+  const publicIp = state.direct.publicIp;
+
+  return {
+    gateway,
+    gatewayUrl: gateway ? `http://${gateway}` : null,
+    localIp,
+    publicIp,
+    publicAddress: publicIp ? `${publicIp}:${port}` : null,
+    internalPort: port,
+    externalPort: port,
+    protocol: "TCP",
+    ruleName: `Minecraft ${port}`,
+    note: "공유기 관리자 페이지에서 포트포워딩, NAT, 가상 서버, 포트 매핑 메뉴를 찾으세요."
   };
 }
 
@@ -862,6 +890,7 @@ async function getStatusPayload() {
     portOpen: await checkPort(serverPort),
     lanAddresses: getLanAddresses(serverPort),
     direct: getDirectSnapshot(serverPort),
+    manual: getManualPortForwardInfo(serverPort),
     firewall: getWindowsFirewallStatus(serverPort),
     tunnel: getTunnelSnapshot()
   };
@@ -1039,6 +1068,13 @@ async function handleApi(request, response, pathname) {
     const config = await loadConfig();
     const serverPort = Number(config.properties["server-port"] || 25565);
     sendJson(response, 200, await refreshDirectShare(serverPort));
+    return;
+  }
+
+  if (request.method === "GET" && pathname === "/api/direct/manual") {
+    const config = await loadConfig();
+    const serverPort = Number(config.properties["server-port"] || 25565);
+    sendJson(response, 200, getManualPortForwardInfo(serverPort));
     return;
   }
 

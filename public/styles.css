@@ -496,6 +496,98 @@ select:focus {
   box-shadow: var(--shadow);
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 24, 19, 0.38);
+  padding: 20px;
+  z-index: 20;
+}
+
+.modal {
+  width: min(640px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.manual-summary,
+.manual-table {
+  display: grid;
+  gap: 10px;
+}
+
+.manual-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.manual-summary div,
+.manual-table div {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  padding: 10px;
+}
+
+.manual-table {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.manual-summary span,
+.manual-table span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.manual-summary strong,
+.manual-table strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.manual-steps {
+  margin: 14px 0;
+  padding-left: 22px;
+  color: var(--ink);
+  line-height: 1.55;
+}
+
+.manual-note {
+  margin: 0;
+  border: 1px solid rgba(189, 122, 24, 0.34);
+  border-radius: 7px;
+  background: rgba(189, 122, 24, 0.08);
+  color: #7f5415;
+  padding: 10px;
+  line-height: 1.45;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
 @media (max-width: 980px) {
   .overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -541,6 +633,9 @@ select:focus {
   .field-grid,
   .button-row,
   .helper-grid,
+  .manual-summary,
+  .manual-table,
+  .modal-actions,
   .toggle-grid {
     grid-template-columns: 1fr;
   }

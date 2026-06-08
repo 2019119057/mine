@@ -90,6 +90,8 @@
             <div class="helper-grid">
               <button id="firewallButton">방화벽 허용</button>
               <button id="firewallRemoveButton">방화벽 닫기</button>
+              <button id="routerPageButton">공유기 페이지 열기</button>
+              <button id="manualGuideButton">수동 설정 방법</button>
               <button id="directRefreshButton">상태 다시 확인</button>
             </div>
 
@@ -177,6 +179,54 @@
         </div>
       </section>
     </main>
+
+    <div class="modal-backdrop" id="manualModal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="manualModalTitle">
+        <div class="modal-head">
+          <h2 id="manualModalTitle">수동 포트포워딩 설정</h2>
+          <button class="icon-button" id="manualCloseButton" title="닫기" aria-label="닫기">×</button>
+        </div>
+
+        <div class="manual-summary">
+          <div>
+            <span>공유기 주소</span>
+            <strong id="manualGateway">-</strong>
+          </div>
+          <div>
+            <span>내 PC 주소</span>
+            <strong id="manualLocalIp">-</strong>
+          </div>
+          <div>
+            <span>친구 접속 주소</span>
+            <strong id="manualPublicAddress">-</strong>
+          </div>
+        </div>
+
+        <div class="manual-table">
+          <div><span>규칙 이름</span><strong id="manualRuleName">Minecraft</strong></div>
+          <div><span>프로토콜</span><strong id="manualProtocol">TCP</strong></div>
+          <div><span>외부 포트</span><strong id="manualExternalPort">25565</strong></div>
+          <div><span>내부 IP</span><strong id="manualInternalIp">-</strong></div>
+          <div><span>내부 포트</span><strong id="manualInternalPort">25565</strong></div>
+        </div>
+
+        <ol class="manual-steps">
+          <li>공유기 관리자 페이지를 엽니다.</li>
+          <li>포트포워딩, NAT, 가상 서버, 포트 매핑 메뉴를 찾습니다.</li>
+          <li>위 표의 값을 그대로 입력하고 저장/적용합니다.</li>
+          <li>앱에서 방화벽 허용을 누른 뒤 친구 접속 주소를 전달합니다.</li>
+        </ol>
+
+        <p class="manual-note">
+          공유기 WAN IP가 앱의 공인 IP와 다르거나 10.x, 172.16~31.x, 192.168.x, 100.64~127.x 대역이면 통신사 CGNAT/이중 공유기일 수 있습니다.
+        </p>
+
+        <div class="modal-actions">
+          <button id="manualOpenRouterButton">공유기 페이지 열기</button>
+          <button id="manualCopyButton">설정값 복사</button>
+        </div>
+      </section>
+    </div>
 
     <div class="toast" id="toast" hidden></div>
     <script src="/app.js"></script>

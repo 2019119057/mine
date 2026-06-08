@@ -21,6 +21,8 @@ const els = {
   unmapPortButton: document.getElementById("unmapPortButton"),
   firewallButton: document.getElementById("firewallButton"),
   firewallRemoveButton: document.getElementById("firewallRemoveButton"),
+  routerPageButton: document.getElementById("routerPageButton"),
+  manualGuideButton: document.getElementById("manualGuideButton"),
   directRefreshButton: document.getElementById("directRefreshButton"),
   publicAddress: document.getElementById("publicAddress"),
   javaCheck: document.getElementById("javaCheck"),
@@ -44,7 +46,19 @@ const els = {
   log: document.getElementById("log"),
   commandForm: document.getElementById("commandForm"),
   commandInput: document.getElementById("commandInput"),
-  toast: document.getElementById("toast")
+  toast: document.getElementById("toast"),
+  manualModal: document.getElementById("manualModal"),
+  manualCloseButton: document.getElementById("manualCloseButton"),
+  manualGateway: document.getElementById("manualGateway"),
+  manualLocalIp: document.getElementById("manualLocalIp"),
+  manualPublicAddress: document.getElementById("manualPublicAddress"),
+  manualRuleName: document.getElementById("manualRuleName"),
+  manualProtocol: document.getElementById("manualProtocol"),
+  manualExternalPort: document.getElementById("manualExternalPort"),
+  manualInternalIp: document.getElementById("manualInternalIp"),
+  manualInternalPort: document.getElementById("manualInternalPort"),
+  manualOpenRouterButton: document.getElementById("manualOpenRouterButton"),
+  manualCopyButton: document.getElementById("manualCopyButton")
 };
 
 let lastLogId = 0;
@@ -53,6 +67,7 @@ let eulaTouched = false;
 let statusInFlight = false;
 let logsInFlight = false;
 let currentPublicAddress = null;
+let manualInfo = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -120,9 +135,26 @@ function setCheck(el, ok, text) {
   setText(el, text);
 }
 
+function renderManualInfo(info) {
+  manualInfo = info || manualInfo;
+  if (!manualInfo) return;
+
+  setText(els.manualGateway, manualInfo.gatewayUrl || "감지 안 됨");
+  setText(els.manualLocalIp, manualInfo.localIp || "-");
+  setText(els.manualPublicAddress, manualInfo.publicAddress || "공인 IP 확인 후 표시");
+  setText(els.manualRuleName, manualInfo.ruleName || "Minecraft");
+  setText(els.manualProtocol, manualInfo.protocol || "TCP");
+  setText(els.manualExternalPort, String(manualInfo.externalPort || 25565));
+  setText(els.manualInternalIp, manualInfo.localIp || "-");
+  setText(els.manualInternalPort, String(manualInfo.internalPort || 25565));
+  setDisabled(els.routerPageButton, !manualInfo.gatewayUrl);
+  setDisabled(els.manualOpenRouterButton, !manualInfo.gatewayUrl);
+}
+
 function renderDirect(status) {
   const direct = status.direct || {};
   const firewall = status.firewall || {};
+  renderManualInfo(status.manual);
   currentPublicAddress = direct.address || (direct.publicIp ? `${direct.publicIp}:${status.port}` : null);
   const displayAddress = currentPublicAddress || status.lanAddresses[0] || "-";
 
@@ -413,6 +445,46 @@ async function allowFirewall() {
   await refreshStatus();
 }
 
+async function refreshManualInfo() {
+  manualInfo = await api("/api/direct/manual");
+  renderManualInfo(manualInfo);
+  return manualInfo;
+}
+
+async function openRouterPage() {
+  const info = manualInfo || (await refreshManualInfo());
+  if (!info.gatewayUrl) {
+    showToast("공유기 주소를 찾지 못했습니다");
+    return;
+  }
+  window.open(info.gatewayUrl, "_blank", "noopener");
+}
+
+async function showManualGuide() {
+  await refreshManualInfo();
+  els.manualModal.hidden = false;
+}
+
+function closeManualGuide() {
+  els.manualModal.hidden = true;
+}
+
+async function copyManualInfo() {
+  const info = manualInfo || (await refreshManualInfo());
+  const text = [
+    "Minecraft 수동 포트포워딩 설정값",
+    `공유기 주소: ${info.gatewayUrl || "-"}`,
+    `규칙 이름: ${info.ruleName || "Minecraft"}`,
+    `프로토콜: ${info.protocol || "TCP"}`,
+    `외부 포트: ${info.externalPort}`,
+    `내부 IP: ${info.localIp}`,
+    `내부 포트: ${info.internalPort}`,
+    `친구 접속 주소: ${info.publicAddress || "공인 IP 확인 후 표시"}`
+  ].join("\n");
+  await navigator.clipboard.writeText(text);
+  showToast("수동 설정값 복사 완료");
+}
+
 async function removeFirewall() {
   await api("/api/firewall/remove", {
     method: "POST"
@@ -529,6 +601,45 @@ function wireEvents() {
     } catch (error) {
       showToast(error.message);
       await refreshStatus();
+    }
+  });
+
+  els.routerPageButton.addEventListener("click", async () => {
+    try {
+      await openRouterPage();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  els.manualGuideButton.addEventListener("click", async () => {
+    try {
+      await showManualGuide();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  els.manualOpenRouterButton.addEventListener("click", async () => {
+    try {
+      await openRouterPage();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  els.manualCopyButton.addEventListener("click", async () => {
+    try {
+      await copyManualInfo();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  els.manualCloseButton.addEventListener("click", closeManualGuide);
+  els.manualModal.addEventListener("click", (event) => {
+    if (event.target === els.manualModal) {
+      closeManualGuide();
     }
   });
 
