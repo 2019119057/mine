@@ -57,6 +57,7 @@ const els = {
   manualExternalPort: document.getElementById("manualExternalPort"),
   manualInternalIp: document.getElementById("manualInternalIp"),
   manualInternalPort: document.getElementById("manualInternalPort"),
+  routerCandidates: document.getElementById("routerCandidates"),
   manualOpenRouterButton: document.getElementById("manualOpenRouterButton"),
   manualCopyButton: document.getElementById("manualCopyButton")
 };
@@ -149,6 +150,17 @@ function renderManualInfo(info) {
   setText(els.manualInternalPort, String(manualInfo.internalPort || 25565));
   setDisabled(els.routerPageButton, !manualInfo.gatewayUrl);
   setDisabled(els.manualOpenRouterButton, !manualInfo.gatewayUrl);
+
+  els.routerCandidates.innerHTML = "";
+  const fragment = document.createDocumentFragment();
+  for (const url of manualInfo.gatewayCandidates || []) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = url;
+    button.dataset.routerUrl = url;
+    fragment.append(button);
+  }
+  els.routerCandidates.append(fragment);
 }
 
 function renderDirect(status) {
@@ -451,13 +463,23 @@ async function refreshManualInfo() {
   return manualInfo;
 }
 
-async function openRouterPage() {
+async function openRouterPage(url = null) {
   const info = manualInfo || (await refreshManualInfo());
-  if (!info.gatewayUrl) {
+  const targetUrl = url || info.gatewayUrl;
+  if (!targetUrl) {
     showToast("공유기 주소를 찾지 못했습니다");
     return;
   }
-  window.open(info.gatewayUrl, "_blank", "noopener");
+
+  try {
+    await api("/api/router/open", {
+      method: "POST",
+      body: { url: targetUrl }
+    });
+  } catch {
+    window.open(targetUrl, "_blank", "noopener");
+  }
+  showToast("공유기 페이지 열기 요청 완료");
 }
 
 async function showManualGuide() {
@@ -639,6 +661,27 @@ function wireEvents() {
   els.manualCloseButton.addEventListener("click", closeManualGuide);
   els.manualModal.addEventListener("click", (event) => {
     if (event.target === els.manualModal) {
+      closeManualGuide();
+    }
+  });
+  document.addEventListener("click", async (event) => {
+    const closeButton = event.target.closest("[data-modal-close]");
+    if (closeButton) {
+      closeManualGuide();
+      return;
+    }
+
+    const routerButton = event.target.closest("[data-router-url]");
+    if (routerButton) {
+      try {
+        await openRouterPage(routerButton.dataset.routerUrl);
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !els.manualModal.hidden) {
       closeManualGuide();
     }
   });

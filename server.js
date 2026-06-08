@@ -447,10 +447,14 @@ function getManualPortForwardInfo(port) {
   const gateway = getDefaultGatewayAddress();
   const localIp = getPrimaryLanAddress();
   const publicIp = state.direct.publicIp;
+  const commonGateways = ["192.168.0.1", "192.168.1.1", "192.168.200.1", "192.168.200.254"];
+  const gatewayCandidates = [...new Set([gateway, ...commonGateways].filter(Boolean))]
+    .map((address) => `http://${address}`);
 
   return {
     gateway,
     gatewayUrl: gateway ? `http://${gateway}` : null,
+    gatewayCandidates,
     localIp,
     publicIp,
     publicAddress: publicIp ? `${publicIp}:${port}` : null,
@@ -459,6 +463,34 @@ function getManualPortForwardInfo(port) {
     protocol: "TCP",
     ruleName: `Minecraft ${port}`,
     note: "공유기 관리자 페이지에서 포트포워딩, NAT, 가상 서버, 포트 매핑 메뉴를 찾으세요."
+  };
+}
+
+function openUrlInBrowser(url) {
+  let parsed = null;
+  try {
+    parsed = new URL(String(url || ""));
+  } catch {
+    throw new Error("Invalid URL.");
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Only http and https URLs can be opened.");
+  }
+
+  const result = spawnSync("rundll32.exe", ["url.dll,FileProtocolHandler", parsed.href], {
+    encoding: "utf8",
+    timeout: 5000,
+    windowsHide: true
+  });
+
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "Could not open the URL.").trim());
+  }
+
+  return {
+    ok: true,
+    url: parsed.href
   };
 }
 
@@ -1075,6 +1107,19 @@ async function handleApi(request, response, pathname) {
     const config = await loadConfig();
     const serverPort = Number(config.properties["server-port"] || 25565);
     sendJson(response, 200, getManualPortForwardInfo(serverPort));
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/router/open") {
+    const body = await parseBody(request);
+    const config = await loadConfig();
+    const serverPort = Number(config.properties["server-port"] || 25565);
+    const info = getManualPortForwardInfo(serverPort);
+    const target = body.url || info.gatewayUrl;
+    if (!info.gatewayCandidates.includes(target)) {
+      throw new Error("Unknown router URL.");
+    }
+    sendJson(response, 200, openUrlInBrowser(target));
     return;
   }
 

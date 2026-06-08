@@ -184,7 +184,7 @@
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="manualModalTitle">
         <div class="modal-head">
           <h2 id="manualModalTitle">수동 포트포워딩 설정</h2>
-          <button class="icon-button" id="manualCloseButton" title="닫기" aria-label="닫기">×</button>
+          <button type="button" class="icon-button" id="manualCloseButton" data-modal-close title="닫기" aria-label="닫기">×</button>
         </div>
 
         <div class="manual-summary">
@@ -220,6 +220,11 @@
         <p class="manual-note">
           공유기 WAN IP가 앱의 공인 IP와 다르거나 10.x, 172.16~31.x, 192.168.x, 100.64~127.x 대역이면 통신사 CGNAT/이중 공유기일 수 있습니다.
         </p>
+
+        <div class="router-candidates">
+          <span>열어볼 공유기 주소</span>
+          <div id="routerCandidates"></div>
+        </div>
 
         <div class="modal-actions">
           <button id="manualOpenRouterButton">공유기 페이지 열기</button>

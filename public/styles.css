@@ -581,6 +581,29 @@ select:focus {
   line-height: 1.45;
 }
 
+.router-candidates {
+  margin-top: 14px;
+}
+
+.router-candidates > span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.router-candidates > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.router-candidates button {
+  min-height: 36px;
+  overflow-wrap: anywhere;
+}
+
 .modal-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
