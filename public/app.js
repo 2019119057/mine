@@ -49,6 +49,9 @@ const els = {
 let lastLogId = 0;
 let toastTimer = null;
 let eulaTouched = false;
+let statusInFlight = false;
+let logsInFlight = false;
+let currentPublicAddress = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -65,13 +68,25 @@ async function api(path, options = {}) {
   return data;
 }
 
+function setText(el, text) {
+  if (el.textContent !== text) {
+    el.textContent = text;
+  }
+}
+
+function setDisabled(el, disabled) {
+  if (el.disabled !== disabled) {
+    el.disabled = disabled;
+  }
+}
+
 function showToast(message) {
   window.clearTimeout(toastTimer);
-  els.toast.textContent = message;
+  setText(els.toast, message);
   els.toast.hidden = false;
   toastTimer = window.setTimeout(() => {
     els.toast.hidden = true;
-  }, 3200);
+  }, 3000);
 }
 
 function statusLabel(status) {
@@ -97,21 +112,24 @@ function directLabel(direct) {
 }
 
 function setCheck(el, ok, text) {
-  el.className = `check-item ${ok ? "ok" : "warn"}`;
-  el.textContent = text;
+  const nextClass = `check-item ${ok ? "ok" : "warn"}`;
+  if (el.className !== nextClass) {
+    el.className = nextClass;
+  }
+  setText(el, text);
 }
 
 function renderDirect(status) {
   const direct = status.direct || {};
   const firewall = status.firewall || {};
-  const publicAddress = direct.address || (direct.publicIp ? `${direct.publicIp}:${status.port}` : null);
-  const displayAddress = publicAddress || status.lanAddresses[0] || "-";
+  currentPublicAddress = direct.address || (direct.publicIp ? `${direct.publicIp}:${status.port}` : null);
+  const displayAddress = currentPublicAddress || status.lanAddresses[0] || "-";
 
-  els.directStatus.textContent = directLabel(direct);
-  els.publicAddress.textContent = publicAddress || "공인 IP 확인 후 표시";
-  els.addressMetric.textContent = displayAddress;
-  els.copyAddressButton.disabled = !publicAddress;
-  els.unmapPortButton.disabled = !direct.mapped;
+  setText(els.directStatus, directLabel(direct));
+  setText(els.publicAddress, currentPublicAddress || "공인 IP 확인 후 표시");
+  setText(els.addressMetric, displayAddress);
+  setDisabled(els.copyAddressButton, !currentPublicAddress);
+  setDisabled(els.unmapPortButton, !direct.mapped);
 
   setCheck(els.javaCheck, status.java.ok, status.java.ok ? "Java 설치됨" : "Java 설치 필요");
   setCheck(
@@ -127,14 +145,12 @@ function renderDirect(status) {
   setCheck(
     els.portMapCheck,
     direct.mapped === true,
-    direct.mapped
-      ? `${direct.method || "UPnP"} 포트포워딩 완료`
-      : "자동 포트포워딩 필요"
+    direct.mapped ? `${direct.method || "UPnP"} 포트포워딩 완료` : "자동 포트포워딩 필요"
   );
 
   const hint = [];
-  if (publicAddress) {
-    hint.push(`친구에게 ${publicAddress} 를 보내면 됩니다.`);
+  if (currentPublicAddress) {
+    hint.push(`친구에게 ${currentPublicAddress} 를 보내면 됩니다.`);
   } else {
     hint.push("공인 IP 확인을 누르면 친구에게 줄 주소가 만들어집니다.");
   }
@@ -147,25 +163,28 @@ function renderDirect(status) {
   if (firewall.message) {
     hint.push(`방화벽: ${firewall.message}`);
   }
-  els.directHint.textContent = hint.join("\n");
+  setText(els.directHint, hint.join("\n"));
 }
 
 function updateStatus(status) {
-  els.statusPill.className = `status-pill ${status.status}`;
-  els.statusText.textContent = statusLabel(status.status);
-  els.runningMetric.textContent = status.running ? "켜짐" : "꺼짐";
-  els.versionMetric.textContent = status.resolvedVersion || "미다운로드";
-  els.portMetric.textContent = String(status.port || 25565);
+  const statusClass = `status-pill ${status.status}`;
+  if (els.statusPill.className !== statusClass) {
+    els.statusPill.className = statusClass;
+  }
+  setText(els.statusText, statusLabel(status.status));
+  setText(els.runningMetric, status.running ? "켜짐" : "꺼짐");
+  setText(els.versionMetric, status.resolvedVersion || "미다운로드");
+  setText(els.portMetric, String(status.port || 25565));
 
   const busy = status.status === "starting" || status.status === "stopping";
-  els.startButton.disabled = status.running || busy || Boolean(status.download);
-  els.stopButton.disabled = !status.running && !busy;
-  els.commandInput.disabled = !status.running;
-  els.commandForm.querySelector("button").disabled = !status.running;
+  setDisabled(els.startButton, status.running || busy || Boolean(status.download));
+  setDisabled(els.stopButton, !status.running && !busy);
+  setDisabled(els.commandInput, !status.running);
+  setDisabled(els.commandForm.querySelector("button"), !status.running);
 
   if (status.download) {
     els.downloadBox.hidden = false;
-    els.downloadPercent.textContent = `${status.download.percent}%`;
+    setText(els.downloadPercent, `${status.download.percent}%`);
     els.downloadBar.style.width = `${status.download.percent}%`;
   } else {
     els.downloadBox.hidden = true;
@@ -181,9 +200,10 @@ function updateStatus(status) {
     }
   }
 
-  els.javaHint.textContent = status.java.ok
-    ? status.java.output.split("\n")[0]
-    : "Java를 찾을 수 없음";
+  setText(
+    els.javaHint,
+    status.java.ok ? status.java.output.split("\n")[0] : "Java를 찾을 수 없음"
+  );
   renderDirect(status);
 }
 
@@ -222,13 +242,16 @@ function readConfigFromForm() {
 async function loadVersions() {
   try {
     const data = await api("/api/versions");
+    const existing = new Set([...els.versionSelect.options].map((option) => option.value));
+    const fragment = document.createDocumentFragment();
     for (const release of data.releases) {
-      if ([...els.versionSelect.options].some((option) => option.value === release.id)) continue;
+      if (existing.has(release.id)) continue;
       const option = document.createElement("option");
       option.value = release.id;
       option.textContent = release.id;
-      els.versionSelect.append(option);
+      fragment.append(option);
     }
+    els.versionSelect.append(fragment);
   } catch (error) {
     showToast(error.message);
   }
@@ -266,32 +289,45 @@ function renderLogLine(entry) {
 }
 
 async function pollLogs() {
+  if (logsInFlight) return;
+  logsInFlight = true;
   try {
     const data = await api(`/api/logs?since=${lastLogId}`);
-    if (data.logs.length) {
-      const shouldStick =
-        els.log.scrollTop + els.log.clientHeight >= els.log.scrollHeight - 24;
-      for (const entry of data.logs) {
-        lastLogId = Math.max(lastLogId, entry.id);
-        els.log.append(renderLogLine(entry));
-      }
-      while (els.log.children.length > 900) {
+    if (!data.logs.length) return;
+
+    const shouldStick =
+      els.log.scrollTop + els.log.clientHeight >= els.log.scrollHeight - 24;
+    const fragment = document.createDocumentFragment();
+    for (const entry of data.logs) {
+      lastLogId = Math.max(lastLogId, entry.id);
+      fragment.append(renderLogLine(entry));
+    }
+
+    window.requestAnimationFrame(() => {
+      els.log.append(fragment);
+      while (els.log.children.length > 350) {
         els.log.firstChild.remove();
       }
       if (shouldStick) {
         els.log.scrollTop = els.log.scrollHeight;
       }
-    }
+    });
   } catch {
     // Status polling will surface connectivity issues.
+  } finally {
+    logsInFlight = false;
   }
 }
 
 async function refreshStatus() {
+  if (statusInFlight) return;
+  statusInFlight = true;
   try {
     updateStatus(await api("/api/status"));
   } catch (error) {
     showToast(error.message);
+  } finally {
+    statusInFlight = false;
   }
 }
 
@@ -376,9 +412,8 @@ async function allowFirewall() {
 }
 
 async function copyPublicAddress() {
-  const address = els.publicAddress.textContent.trim();
-  if (!address || address === "공인 IP 확인 후 표시") return;
-  await navigator.clipboard.writeText(address);
+  if (!currentPublicAddress) return;
+  await navigator.clipboard.writeText(currentPublicAddress);
   showToast("주소 복사 완료");
 }
 
@@ -478,9 +513,7 @@ function wireEvents() {
     }
   });
 
-  els.directRefreshButton.addEventListener("click", async () => {
-    await refreshStatus();
-  });
+  els.directRefreshButton.addEventListener("click", refreshStatus);
 
   els.refreshButton.addEventListener("click", async () => {
     await refreshStatus();
@@ -507,8 +540,8 @@ async function boot() {
   await loadConfig();
   await refreshStatus();
   await pollLogs();
-  window.setInterval(refreshStatus, 2500);
-  window.setInterval(pollLogs, 1200);
+  window.setInterval(refreshStatus, 5000);
+  window.setInterval(pollLogs, 2000);
 }
 
 boot().catch((error) => showToast(error.message));

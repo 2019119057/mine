@@ -69,9 +69,18 @@ const state = {
     checkedAt: null,
     gateway: null
   },
+  cache: {
+    java: { value: null, time: 0 },
+    firewall: new Map(),
+    playit: { value: null, time: 0 }
+  },
   logs: [],
   nextLogId: 1
 };
+
+const JAVA_CACHE_MS = 60_000;
+const FIREWALL_CACHE_MS = 15_000;
+const PLAYIT_CACHE_MS = 60_000;
 
 function appendLog(type, text) {
   const lines = String(text).replace(/\r/g, "").split("\n");
@@ -319,13 +328,22 @@ async function ensureServerJar(versionId) {
   return { version: entry.id, jarPath, downloaded: true };
 }
 
-function getJavaVersion() {
+function getJavaVersion(options = {}) {
+  if (!options.force && state.cache.java.value && Date.now() - state.cache.java.time < JAVA_CACHE_MS) {
+    return state.cache.java.value;
+  }
+
   const result = spawnSync("java", ["-version"], { encoding: "utf8" });
   const output = `${result.stderr || ""}${result.stdout || ""}`.trim();
-  return {
+  const value = {
     ok: result.status === 0,
     output
   };
+  state.cache.java = {
+    value,
+    time: Date.now()
+  };
+  return value;
 }
 
 function getLanAddresses(port) {
@@ -520,13 +538,21 @@ async function unmapDirectPort(port) {
   return getDirectSnapshot(port);
 }
 
-function getWindowsFirewallStatus(port) {
+function getWindowsFirewallStatus(port, options = {}) {
+  const cached = state.cache.firewall.get(port);
+  if (!options.force && cached && Date.now() - cached.time < FIREWALL_CACHE_MS) {
+    return cached.value;
+  }
+
+  let value;
   if (process.platform !== "win32") {
-    return {
+    value = {
       supported: false,
       allowed: null,
       message: "Windows firewall check is only available on Windows."
     };
+    state.cache.firewall.set(port, { value, time: Date.now() });
+    return value;
   }
 
   const script = `
@@ -540,19 +566,23 @@ function getWindowsFirewallStatus(port) {
   });
 
   if (result.status !== 0) {
-    return {
+    value = {
       supported: true,
       allowed: null,
       message: "Could not check Windows firewall."
     };
+    state.cache.firewall.set(port, { value, time: Date.now() });
+    return value;
   }
 
   const allowed = String(result.stdout || "").includes("allowed");
-  return {
+  value = {
     supported: true,
     allowed,
     message: allowed ? "Inbound TCP rule exists." : "No inbound TCP allow rule was found."
   };
+  state.cache.firewall.set(port, { value, time: Date.now() });
+  return value;
 }
 
 function allowWindowsFirewallPort(port) {
@@ -585,10 +615,15 @@ function allowWindowsFirewallPort(port) {
   }
 
   appendLog("system", `Added Windows firewall allow rule for TCP ${port}.`);
-  return getWindowsFirewallStatus(port);
+  state.cache.firewall.delete(port);
+  return getWindowsFirewallStatus(port, { force: true });
 }
 
 function getPlayitCommand() {
+  if (Date.now() - state.cache.playit.time < PLAYIT_CACHE_MS) {
+    return state.cache.playit.value;
+  }
+
   const candidates =
     process.platform === "win32"
       ? ["playit.exe", "playit-cli.exe", "playit", "playit-cli"]
@@ -605,10 +640,18 @@ function getPlayitCommand() {
         .split(/\r?\n/)
         .map((line) => line.trim())
         .find(Boolean);
-      return resolved || command;
+      state.cache.playit = {
+        value: resolved || command,
+        time: Date.now()
+      };
+      return state.cache.playit.value;
     }
   }
 
+  state.cache.playit = {
+    value: null,
+    time: Date.now()
+  };
   return null;
 }
 
@@ -770,7 +813,7 @@ async function startServer(options = {}) {
   const config = await loadConfig();
   await writeServerProperties(config.properties);
 
-  const java = getJavaVersion();
+  const java = getJavaVersion({ force: true });
   if (!java.ok) {
     throw new Error("Java was not found. Install Java 21 or newer, then restart this app.");
   }
