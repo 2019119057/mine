@@ -20,6 +20,7 @@ const els = {
   mapPortButton: document.getElementById("mapPortButton"),
   unmapPortButton: document.getElementById("unmapPortButton"),
   firewallButton: document.getElementById("firewallButton"),
+  firewallRemoveButton: document.getElementById("firewallRemoveButton"),
   directRefreshButton: document.getElementById("directRefreshButton"),
   publicAddress: document.getElementById("publicAddress"),
   javaCheck: document.getElementById("javaCheck"),
@@ -412,6 +413,14 @@ async function allowFirewall() {
   await refreshStatus();
 }
 
+async function removeFirewall() {
+  await api("/api/firewall/remove", {
+    method: "POST"
+  });
+  showToast("방화벽 규칙 삭제 완료");
+  await refreshStatus();
+}
+
 async function copyPublicAddress() {
   if (!currentPublicAddress) return;
   await navigator.clipboard.writeText(currentPublicAddress);
@@ -508,6 +517,15 @@ function wireEvents() {
   els.firewallButton.addEventListener("click", async () => {
     try {
       await allowFirewall();
+    } catch (error) {
+      showToast(error.message);
+      await refreshStatus();
+    }
+  });
+
+  els.firewallRemoveButton.addEventListener("click", async () => {
+    try {
+      await removeFirewall();
     } catch (error) {
       showToast(error.message);
       await refreshStatus();

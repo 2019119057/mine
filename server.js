@@ -652,6 +652,36 @@ function allowWindowsFirewallPort(port) {
   return getWindowsFirewallStatus(port, { force: true });
 }
 
+function removeWindowsFirewallPort(port) {
+  if (process.platform !== "win32") {
+    throw new Error("Windows firewall rules can only be changed on Windows.");
+  }
+
+  const result = spawnSync(
+    "netsh.exe",
+    [
+      "advfirewall",
+      "firewall",
+      "delete",
+      "rule",
+      `name=MC Java Host ${port}`
+    ],
+    {
+      encoding: "utf8",
+      timeout: 8000,
+      windowsHide: true
+    }
+  );
+
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "Could not remove Windows firewall rule.").trim());
+  }
+
+  appendLog("system", `Removed Windows firewall allow rule for TCP ${port}.`);
+  state.cache.firewall.delete(port);
+  return getWindowsFirewallStatus(port, { force: true });
+}
+
 function getPlayitCommand() {
   if (Date.now() - state.cache.playit.time < PLAYIT_CACHE_MS) {
     return state.cache.playit.value;
@@ -1092,6 +1122,13 @@ async function handleApi(request, response, pathname) {
     const config = await loadConfig();
     const serverPort = Number(config.properties["server-port"] || 25565);
     sendJson(response, 200, allowWindowsFirewallPort(serverPort));
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/firewall/remove") {
+    const config = await loadConfig();
+    const serverPort = Number(config.properties["server-port"] || 25565);
+    sendJson(response, 200, removeWindowsFirewallPort(serverPort));
     return;
   }
 
