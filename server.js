@@ -10,8 +10,9 @@ const { once } = require("node:events");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
-const DATA_DIR = path.join(ROOT, "app-data");
-const SERVER_DIR = path.join(ROOT, "minecraft-server");
+const DATA_ROOT = process.env.MC_JAVA_HOST_HOME || ROOT;
+const DATA_DIR = path.join(DATA_ROOT, "app-data");
+const SERVER_DIR = path.join(DATA_ROOT, "minecraft-server");
 const VERSIONS_DIR = path.join(SERVER_DIR, "versions");
 const BACKUPS_DIR = path.join(SERVER_DIR, "backups");
 const CONFIG_PATH = path.join(DATA_DIR, "config.json");
