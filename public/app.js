@@ -14,14 +14,19 @@ const els = {
   downloadBox: document.getElementById("downloadBox"),
   downloadPercent: document.getElementById("downloadPercent"),
   downloadBar: document.getElementById("downloadBar"),
-  tunnelStatus: document.getElementById("tunnelStatus"),
-  tunnelStartButton: document.getElementById("tunnelStartButton"),
-  tunnelStopButton: document.getElementById("tunnelStopButton"),
+  directStatus: document.getElementById("directStatus"),
+  publicIpButton: document.getElementById("publicIpButton"),
+  copyAddressButton: document.getElementById("copyAddressButton"),
+  mapPortButton: document.getElementById("mapPortButton"),
+  unmapPortButton: document.getElementById("unmapPortButton"),
+  firewallButton: document.getElementById("firewallButton"),
+  directRefreshButton: document.getElementById("directRefreshButton"),
   publicAddress: document.getElementById("publicAddress"),
   javaCheck: document.getElementById("javaCheck"),
   serverCheck: document.getElementById("serverCheck"),
-  playitCheck: document.getElementById("playitCheck"),
-  tunnelLog: document.getElementById("tunnelLog"),
+  firewallCheck: document.getElementById("firewallCheck"),
+  portMapCheck: document.getElementById("portMapCheck"),
+  directHint: document.getElementById("directHint"),
   settingsForm: document.getElementById("settingsForm"),
   versionSelect: document.getElementById("versionSelect"),
   memoryMin: document.getElementById("memoryMin"),
@@ -79,11 +84,16 @@ function statusLabel(status) {
   return labels[status] || status;
 }
 
-function tunnelLabel(tunnel) {
-  if (!tunnel.installed) return "설치 필요";
-  if (tunnel.status === "starting") return "시작 중";
-  if (tunnel.status === "stopping") return "중지 중";
-  return tunnel.running ? "실행 중" : "꺼짐";
+function directLabel(direct) {
+  const labels = {
+    idle: "대기",
+    checking: "확인 중",
+    ready: "IP 확인됨",
+    mapping: "포트 여는 중",
+    mapped: "공개 가능",
+    error: "실패"
+  };
+  return labels[direct.status] || direct.status || "대기";
 }
 
 function setCheck(el, ok, text) {
@@ -91,15 +101,17 @@ function setCheck(el, ok, text) {
   el.textContent = text;
 }
 
-function renderTunnel(status) {
-  const tunnel = status.tunnel || {};
-  const publicAddress = tunnel.address || status.lanAddresses[0] || "-";
+function renderDirect(status) {
+  const direct = status.direct || {};
+  const firewall = status.firewall || {};
+  const publicAddress = direct.address || (direct.publicIp ? `${direct.publicIp}:${status.port}` : null);
+  const displayAddress = publicAddress || status.lanAddresses[0] || "-";
 
-  els.tunnelStatus.textContent = tunnelLabel(tunnel);
-  els.publicAddress.textContent = tunnel.address || "playit 실행 후 표시";
-  els.addressMetric.textContent = publicAddress;
-  els.tunnelStartButton.disabled = tunnel.running || !tunnel.installed;
-  els.tunnelStopButton.disabled = !tunnel.running;
+  els.directStatus.textContent = directLabel(direct);
+  els.publicAddress.textContent = publicAddress || "공인 IP 확인 후 표시";
+  els.addressMetric.textContent = displayAddress;
+  els.copyAddressButton.disabled = !publicAddress;
+  els.unmapPortButton.disabled = !direct.mapped;
 
   setCheck(els.javaCheck, status.java.ok, status.java.ok ? "Java 설치됨" : "Java 설치 필요");
   setCheck(
@@ -108,15 +120,34 @@ function renderTunnel(status) {
     status.running ? `마크 서버 실행 중 (${status.port})` : "마크 서버 먼저 시작"
   );
   setCheck(
-    els.playitCheck,
-    tunnel.installed,
-    tunnel.installed ? "playit 설치됨" : "playit 설치 필요"
+    els.firewallCheck,
+    firewall.allowed === true,
+    firewall.allowed === true ? "Windows 방화벽 허용됨" : "방화벽 허용 필요"
+  );
+  setCheck(
+    els.portMapCheck,
+    direct.mapped === true,
+    direct.mapped
+      ? `${direct.method || "UPnP"} 포트포워딩 완료`
+      : "자동 포트포워딩 필요"
   );
 
-  const lines = tunnel.lines || [];
-  els.tunnelLog.textContent = lines.length
-    ? lines.map((entry) => entry.text).join("\n")
-    : "playit을 켜면 공개 주소와 연결 로그가 여기에 표시됩니다.";
+  const hint = [];
+  if (publicAddress) {
+    hint.push(`친구에게 ${publicAddress} 를 보내면 됩니다.`);
+  } else {
+    hint.push("공인 IP 확인을 누르면 친구에게 줄 주소가 만들어집니다.");
+  }
+  if (!direct.mapped) {
+    hint.push("자동 포트 열기가 실패하면 공유기 UPnP가 꺼져 있거나 통신사 CGNAT일 수 있습니다.");
+  }
+  if (direct.lastError) {
+    hint.push(`오류: ${direct.lastError}`);
+  }
+  if (firewall.message) {
+    hint.push(`방화벽: ${firewall.message}`);
+  }
+  els.directHint.textContent = hint.join("\n");
 }
 
 function updateStatus(status) {
@@ -153,7 +184,7 @@ function updateStatus(status) {
   els.javaHint.textContent = status.java.ok
     ? status.java.output.split("\n")[0]
     : "Java를 찾을 수 없음";
-  renderTunnel(status);
+  renderDirect(status);
 }
 
 function applyConfig(config) {
@@ -312,20 +343,43 @@ async function backupWorld() {
   showToast(`백업 완료: ${result.backupPath}`);
 }
 
-async function startTunnel() {
-  await api("/api/tunnel/start", {
+async function refreshDirectShare() {
+  await api("/api/direct/refresh", {
     method: "POST"
   });
-  showToast("playit 터널 시작 요청 보냄");
+  showToast("공인 IP 확인 완료");
   await refreshStatus();
 }
 
-async function stopTunnel() {
-  await api("/api/tunnel/stop", {
+async function mapDirectPort() {
+  await api("/api/direct/map", {
     method: "POST"
   });
-  showToast("playit 터널 중지 요청 보냄");
+  showToast("자동 포트포워딩 완료");
   await refreshStatus();
+}
+
+async function unmapDirectPort() {
+  await api("/api/direct/unmap", {
+    method: "POST"
+  });
+  showToast("포트포워딩 해제 완료");
+  await refreshStatus();
+}
+
+async function allowFirewall() {
+  await api("/api/firewall/allow", {
+    method: "POST"
+  });
+  showToast("방화벽 규칙 추가 완료");
+  await refreshStatus();
+}
+
+async function copyPublicAddress() {
+  const address = els.publicAddress.textContent.trim();
+  if (!address || address === "공인 IP 확인 후 표시") return;
+  await navigator.clipboard.writeText(address);
+  showToast("주소 복사 완료");
 }
 
 async function sendCommand(command) {
@@ -382,20 +436,50 @@ function wireEvents() {
     }
   });
 
-  els.tunnelStartButton.addEventListener("click", async () => {
+  els.publicIpButton.addEventListener("click", async () => {
     try {
-      await startTunnel();
+      await refreshDirectShare();
     } catch (error) {
       showToast(error.message);
     }
   });
 
-  els.tunnelStopButton.addEventListener("click", async () => {
+  els.copyAddressButton.addEventListener("click", async () => {
     try {
-      await stopTunnel();
+      await copyPublicAddress();
     } catch (error) {
       showToast(error.message);
     }
+  });
+
+  els.mapPortButton.addEventListener("click", async () => {
+    try {
+      await mapDirectPort();
+    } catch (error) {
+      showToast(error.message);
+      await refreshStatus();
+    }
+  });
+
+  els.unmapPortButton.addEventListener("click", async () => {
+    try {
+      await unmapDirectPort();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  els.firewallButton.addEventListener("click", async () => {
+    try {
+      await allowFirewall();
+    } catch (error) {
+      showToast(error.message);
+      await refreshStatus();
+    }
+  });
+
+  els.directRefreshButton.addEventListener("click", async () => {
+    await refreshStatus();
   });
 
   els.refreshButton.addEventListener("click", async () => {

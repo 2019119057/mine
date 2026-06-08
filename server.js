@@ -58,6 +58,17 @@ const state = {
     lastExit: null,
     lines: []
   },
+  direct: {
+    status: "idle",
+    publicIp: null,
+    address: null,
+    mapped: false,
+    mappedAt: null,
+    method: null,
+    lastError: null,
+    checkedAt: null,
+    gateway: null
+  },
   logs: [],
   nextLogId: 1
 };
@@ -329,6 +340,17 @@ function getLanAddresses(port) {
   return addresses;
 }
 
+function getPrimaryLanAddress() {
+  for (const entries of Object.values(os.networkInterfaces())) {
+    for (const entry of entries || []) {
+      if (entry.family === "IPv4" && !entry.internal) {
+        return entry.address;
+      }
+    }
+  }
+  return "127.0.0.1";
+}
+
 function checkPort(port) {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host: "127.0.0.1", port, timeout: 400 });
@@ -342,6 +364,228 @@ function checkPort(port) {
     });
     socket.on("error", () => resolve(false));
   });
+}
+
+async function fetchPublicIpFromWeb() {
+  const endpoints = [
+    {
+      url: "https://api.ipify.org?format=json",
+      read: (data) => data.ip
+    },
+    {
+      url: "https://ifconfig.co/json",
+      read: (data) => data.ip
+    }
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint.url, { signal: AbortSignal.timeout(6000) });
+      if (!response.ok) continue;
+      const ip = endpoint.read(await response.json());
+      if (ip) return ip;
+    } catch {
+      // Try the next public IP service.
+    }
+  }
+
+  throw new Error("Could not detect public IP address.");
+}
+
+function getDirectSnapshot(port) {
+  return {
+    status: state.direct.status,
+    publicIp: state.direct.publicIp,
+    address: state.direct.address || (state.direct.publicIp ? `${state.direct.publicIp}:${port}` : null),
+    mapped: state.direct.mapped,
+    mappedAt: state.direct.mappedAt,
+    method: state.direct.method,
+    lastError: state.direct.lastError,
+    checkedAt: state.direct.checkedAt
+  };
+}
+
+async function refreshDirectShare(port) {
+  state.direct.status = "checking";
+  state.direct.lastError = null;
+
+  try {
+    state.direct.publicIp = await fetchPublicIpFromWeb();
+    state.direct.address = `${state.direct.publicIp}:${port}`;
+    state.direct.status = state.direct.mapped ? "mapped" : "ready";
+    state.direct.checkedAt = new Date().toISOString();
+    return getDirectSnapshot(port);
+  } catch (error) {
+    state.direct.status = "error";
+    state.direct.lastError = error.message;
+    state.direct.checkedAt = new Date().toISOString();
+    throw error;
+  }
+}
+
+async function findNatGateway() {
+  const { upnpNat, pmpNat } = await import("@achingbrain/nat-port-mapper");
+
+  const upnp = upnpNat();
+  try {
+    for await (const gateway of upnp.findGateways({ signal: AbortSignal.timeout(9000) })) {
+      return {
+        gateway,
+        method: "UPnP"
+      };
+    }
+  } catch {
+    // NAT-PMP below gives some routers a second chance.
+  }
+
+  try {
+    const { gateway4sync } = require("default-gateway");
+    const gatewayAddress = gateway4sync().gateway;
+    return {
+      gateway: pmpNat(gatewayAddress),
+      method: "NAT-PMP"
+    };
+  } catch (error) {
+    throw new Error(`Could not find a UPnP/NAT-PMP gateway. ${error.message}`);
+  }
+}
+
+async function mapDirectPort(port) {
+  if (state.direct.gateway && state.direct.mapped) {
+    return getDirectSnapshot(port);
+  }
+
+  state.direct.status = "mapping";
+  state.direct.lastError = null;
+
+  try {
+    const localIp = getPrimaryLanAddress();
+    const { gateway, method } = await findNatGateway();
+
+    await gateway.map(port, localIp, {
+      externalPort: port,
+      protocol: "tcp",
+      description: "MC Java Host"
+    });
+
+    let publicIp = null;
+    try {
+      publicIp = await gateway.externalIp();
+    } catch {
+      publicIp = await fetchPublicIpFromWeb();
+    }
+
+    state.direct.gateway = gateway;
+    state.direct.publicIp = publicIp;
+    state.direct.address = `${publicIp}:${port}`;
+    state.direct.mapped = true;
+    state.direct.mappedAt = new Date().toISOString();
+    state.direct.method = method;
+    state.direct.status = "mapped";
+    state.direct.checkedAt = new Date().toISOString();
+    appendLog("system", `Mapped TCP ${port} with ${method}. Public address: ${state.direct.address}`);
+    return getDirectSnapshot(port);
+  } catch (error) {
+    state.direct.status = "error";
+    state.direct.lastError = error.message;
+    state.direct.checkedAt = new Date().toISOString();
+    appendLog("stderr", `Direct publish failed: ${error.message}`);
+    throw error;
+  }
+}
+
+async function unmapDirectPort(port) {
+  if (!state.direct.gateway) {
+    state.direct.mapped = false;
+    state.direct.status = state.direct.publicIp ? "ready" : "idle";
+    return getDirectSnapshot(port);
+  }
+
+  try {
+    await state.direct.gateway.unmap(port);
+    if (typeof state.direct.gateway.stop === "function") {
+      await state.direct.gateway.stop();
+    }
+    appendLog("system", `Unmapped TCP ${port}.`);
+  } catch (error) {
+    appendLog("stderr", `Direct unpublish failed: ${error.message}`);
+  }
+
+  state.direct.gateway = null;
+  state.direct.mapped = false;
+  state.direct.mappedAt = null;
+  state.direct.method = null;
+  state.direct.status = state.direct.publicIp ? "ready" : "idle";
+  state.direct.checkedAt = new Date().toISOString();
+  return getDirectSnapshot(port);
+}
+
+function getWindowsFirewallStatus(port) {
+  if (process.platform !== "win32") {
+    return {
+      supported: false,
+      allowed: null,
+      message: "Windows firewall check is only available on Windows."
+    };
+  }
+
+  const script = `
+    $rule = Get-NetFirewallRule -DisplayName "MC Java Host ${port}" -ErrorAction SilentlyContinue
+    if ($rule -and $rule.Enabled -eq "True") { "allowed" } else { "missing" }
+  `;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", script], {
+    encoding: "utf8",
+    timeout: 5000,
+    windowsHide: true
+  });
+
+  if (result.status !== 0) {
+    return {
+      supported: true,
+      allowed: null,
+      message: "Could not check Windows firewall."
+    };
+  }
+
+  const allowed = String(result.stdout || "").includes("allowed");
+  return {
+    supported: true,
+    allowed,
+    message: allowed ? "Inbound TCP rule exists." : "No inbound TCP allow rule was found."
+  };
+}
+
+function allowWindowsFirewallPort(port) {
+  if (process.platform !== "win32") {
+    throw new Error("Windows firewall rules can only be changed on Windows.");
+  }
+
+  const result = spawnSync(
+    "netsh.exe",
+    [
+      "advfirewall",
+      "firewall",
+      "add",
+      "rule",
+      `name=MC Java Host ${port}`,
+      "dir=in",
+      "action=allow",
+      "protocol=TCP",
+      `localport=${port}`
+    ],
+    {
+      encoding: "utf8",
+      timeout: 8000,
+      windowsHide: true
+    }
+  );
+
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "Could not add Windows firewall rule.").trim());
+  }
+
+  appendLog("system", `Added Windows firewall allow rule for TCP ${port}.`);
+  return getWindowsFirewallStatus(port);
 }
 
 function getPlayitCommand() {
@@ -511,6 +755,8 @@ async function getStatusPayload() {
     port: serverPort,
     portOpen: await checkPort(serverPort),
     lanAddresses: getLanAddresses(serverPort),
+    direct: getDirectSnapshot(serverPort),
+    firewall: getWindowsFirewallStatus(serverPort),
     tunnel: getTunnelSnapshot()
   };
 }
@@ -683,6 +929,13 @@ async function handleApi(request, response, pathname) {
     return;
   }
 
+  if (request.method === "POST" && pathname === "/api/direct/refresh") {
+    const config = await loadConfig();
+    const serverPort = Number(config.properties["server-port"] || 25565);
+    sendJson(response, 200, await refreshDirectShare(serverPort));
+    return;
+  }
+
   if (request.method === "GET" && pathname === "/api/config") {
     const config = await loadConfig();
     config.properties = {
@@ -742,6 +995,27 @@ async function handleApi(request, response, pathname) {
 
   if (request.method === "POST" && pathname === "/api/tunnel/stop") {
     sendJson(response, 200, await stopPlayitTunnel());
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/direct/map") {
+    const config = await loadConfig();
+    const serverPort = Number(config.properties["server-port"] || 25565);
+    sendJson(response, 200, await mapDirectPort(serverPort));
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/direct/unmap") {
+    const config = await loadConfig();
+    const serverPort = Number(config.properties["server-port"] || 25565);
+    sendJson(response, 200, await unmapDirectPort(serverPort));
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/firewall/allow") {
+    const config = await loadConfig();
+    const serverPort = Number(config.properties["server-port"] || 25565);
+    sendJson(response, 200, allowWindowsFirewallPort(serverPort));
     return;
   }
 

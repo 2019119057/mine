@@ -71,8 +71,8 @@
 
           <div class="panel publish-panel">
             <div class="panel-head">
-              <h2>무료 공개</h2>
-              <span class="mini-status" id="tunnelStatus">확인 중</span>
+              <h2>직접 공개</h2>
+              <span class="mini-status" id="directStatus">확인 중</span>
             </div>
 
             <div class="publish-address">
@@ -81,22 +81,25 @@
             </div>
 
             <div class="button-row">
-              <button id="tunnelStartButton">playit 켜기</button>
-              <button id="tunnelStopButton">playit 끄기</button>
+              <button id="publicIpButton">공인 IP 확인</button>
+              <button id="copyAddressButton">주소 복사</button>
+              <button id="mapPortButton">자동 포트 열기</button>
+              <button id="unmapPortButton">포트 닫기</button>
             </div>
 
             <div class="helper-grid">
-              <a class="helper-link" href="https://playit.gg/download" target="_blank" rel="noreferrer">playit 설치</a>
-              <a class="helper-link" href="https://playit.gg/account/tunnels" target="_blank" rel="noreferrer">터널 관리</a>
+              <button id="firewallButton">방화벽 허용</button>
+              <button id="directRefreshButton">상태 다시 확인</button>
             </div>
 
             <div class="checklist">
               <div class="check-item" id="javaCheck">Java 확인 중</div>
               <div class="check-item" id="serverCheck">마크 서버 꺼짐</div>
-              <div class="check-item" id="playitCheck">playit 확인 중</div>
+              <div class="check-item" id="firewallCheck">방화벽 확인 중</div>
+              <div class="check-item" id="portMapCheck">포트포워딩 확인 중</div>
             </div>
 
-            <div class="tunnel-log" id="tunnelLog"></div>
+            <div class="tunnel-log" id="directHint"></div>
           </div>
 
           <form class="panel settings-panel" id="settingsForm">
