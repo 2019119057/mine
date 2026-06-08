@@ -410,6 +410,17 @@ async function fetchPublicIpFromWeb() {
   throw new Error("Could not detect public IP address.");
 }
 
+function withTimeout(promise, milliseconds, message) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), milliseconds);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
 function getDirectSnapshot(port) {
   return {
     status: state.direct.status,
@@ -475,20 +486,35 @@ async function mapDirectPort(port) {
 
   state.direct.status = "mapping";
   state.direct.lastError = null;
+  let gateway = null;
 
   try {
     const localIp = getPrimaryLanAddress();
-    const { gateway, method } = await findNatGateway();
+    const found = await withTimeout(
+      findNatGateway(),
+      12_000,
+      "공유기 자동 포트포워딩 기능을 찾지 못했습니다. 공유기 UPnP가 꺼져 있거나 통신사 CGNAT일 수 있습니다."
+    );
+    gateway = found.gateway;
+    const { method } = found;
 
-    await gateway.map(port, localIp, {
-      externalPort: port,
-      protocol: "tcp",
-      description: "MC Java Host"
-    });
+    await withTimeout(
+      gateway.map(port, localIp, {
+        externalPort: port,
+        protocol: "tcp",
+        description: "MC Java Host"
+      }),
+      12_000,
+      "공유기가 포트 열기 요청에 응답하지 않습니다. 공유기 UPnP 설정을 켜거나 수동 포트포워딩이 필요할 수 있습니다."
+    );
 
     let publicIp = null;
     try {
-      publicIp = await gateway.externalIp();
+      publicIp = await withTimeout(
+        gateway.externalIp(),
+        6000,
+        "공유기에서 공인 IP를 받지 못했습니다."
+      );
     } catch {
       publicIp = await fetchPublicIpFromWeb();
     }
@@ -504,6 +530,13 @@ async function mapDirectPort(port) {
     appendLog("system", `Mapped TCP ${port} with ${method}. Public address: ${state.direct.address}`);
     return getDirectSnapshot(port);
   } catch (error) {
+    if (gateway && typeof gateway.stop === "function" && !state.direct.gateway) {
+      try {
+        await gateway.stop();
+      } catch {
+        // Nothing else to clean up.
+      }
+    }
     state.direct.status = "error";
     state.direct.lastError = error.message;
     state.direct.checkedAt = new Date().toISOString();

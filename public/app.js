@@ -129,6 +129,7 @@ function renderDirect(status) {
   setText(els.publicAddress, currentPublicAddress || "공인 IP 확인 후 표시");
   setText(els.addressMetric, displayAddress);
   setDisabled(els.copyAddressButton, !currentPublicAddress);
+  setDisabled(els.mapPortButton, direct.status === "mapping" || direct.mapped === true);
   setDisabled(els.unmapPortButton, !direct.mapped);
 
   setCheck(els.javaCheck, status.java.ok, status.java.ok ? "Java 설치됨" : "Java 설치 필요");
