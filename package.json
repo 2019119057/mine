@@ -3,10 +3,33 @@
   "version": "0.1.0",
   "private": true,
   "description": "Local Minecraft Java Edition server host panel.",
-  "main": "server.js",
+  "main": "desktop-main.js",
   "scripts": {
+    "dev": "node server.js",
+    "desktop": "electron .",
+    "build:win": "electron-builder --win portable",
     "start": "node server.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js && node --check desktop-main.js && node --check public/app.js"
+  },
+  "build": {
+    "appId": "com.mcjavahost.app",
+    "productName": "MC Java Host",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "desktop-main.js",
+      "server.js",
+      "package.json",
+      "public/**/*"
+    ],
+    "win": {
+      "target": "portable"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.3.3",
+    "electron-builder": "^26.0.0"
   },
   "engines": {
     "node": ">=20"

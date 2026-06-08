@@ -14,6 +14,14 @@ const els = {
   downloadBox: document.getElementById("downloadBox"),
   downloadPercent: document.getElementById("downloadPercent"),
   downloadBar: document.getElementById("downloadBar"),
+  tunnelStatus: document.getElementById("tunnelStatus"),
+  tunnelStartButton: document.getElementById("tunnelStartButton"),
+  tunnelStopButton: document.getElementById("tunnelStopButton"),
+  publicAddress: document.getElementById("publicAddress"),
+  javaCheck: document.getElementById("javaCheck"),
+  serverCheck: document.getElementById("serverCheck"),
+  playitCheck: document.getElementById("playitCheck"),
+  tunnelLog: document.getElementById("tunnelLog"),
   settingsForm: document.getElementById("settingsForm"),
   versionSelect: document.getElementById("versionSelect"),
   memoryMin: document.getElementById("memoryMin"),
@@ -66,9 +74,49 @@ function statusLabel(status) {
     running: "실행 중",
     starting: "시작 중",
     stopping: "중지 중",
-    stopped: "중지됨"
+    stopped: "꺼짐"
   };
   return labels[status] || status;
+}
+
+function tunnelLabel(tunnel) {
+  if (!tunnel.installed) return "설치 필요";
+  if (tunnel.status === "starting") return "시작 중";
+  if (tunnel.status === "stopping") return "중지 중";
+  return tunnel.running ? "실행 중" : "꺼짐";
+}
+
+function setCheck(el, ok, text) {
+  el.className = `check-item ${ok ? "ok" : "warn"}`;
+  el.textContent = text;
+}
+
+function renderTunnel(status) {
+  const tunnel = status.tunnel || {};
+  const publicAddress = tunnel.address || status.lanAddresses[0] || "-";
+
+  els.tunnelStatus.textContent = tunnelLabel(tunnel);
+  els.publicAddress.textContent = tunnel.address || "playit 실행 후 표시";
+  els.addressMetric.textContent = publicAddress;
+  els.tunnelStartButton.disabled = tunnel.running || !tunnel.installed;
+  els.tunnelStopButton.disabled = !tunnel.running;
+
+  setCheck(els.javaCheck, status.java.ok, status.java.ok ? "Java 설치됨" : "Java 설치 필요");
+  setCheck(
+    els.serverCheck,
+    status.running,
+    status.running ? `마크 서버 실행 중 (${status.port})` : "마크 서버 먼저 시작"
+  );
+  setCheck(
+    els.playitCheck,
+    tunnel.installed,
+    tunnel.installed ? "playit 설치됨" : "playit 설치 필요"
+  );
+
+  const lines = tunnel.lines || [];
+  els.tunnelLog.textContent = lines.length
+    ? lines.map((entry) => entry.text).join("\n")
+    : "playit을 켜면 공개 주소와 연결 로그가 여기에 표시됩니다.";
 }
 
 function updateStatus(status) {
@@ -77,7 +125,6 @@ function updateStatus(status) {
   els.runningMetric.textContent = status.running ? "켜짐" : "꺼짐";
   els.versionMetric.textContent = status.resolvedVersion || "미다운로드";
   els.portMetric.textContent = String(status.port || 25565);
-  els.addressMetric.textContent = status.lanAddresses[0] || "LAN 없음";
 
   const busy = status.status === "starting" || status.status === "stopping";
   els.startButton.disabled = status.running || busy || Boolean(status.download);
@@ -102,9 +149,11 @@ function updateStatus(status) {
       els.eulaCheck.checked = false;
     }
   }
+
   els.javaHint.textContent = status.java.ok
     ? status.java.output.split("\n")[0]
     : "Java를 찾을 수 없음";
+  renderTunnel(status);
 }
 
 function applyConfig(config) {
@@ -143,6 +192,7 @@ async function loadVersions() {
   try {
     const data = await api("/api/versions");
     for (const release of data.releases) {
+      if ([...els.versionSelect.options].some((option) => option.value === release.id)) continue;
       const option = document.createElement("option");
       option.value = release.id;
       option.textContent = release.id;
@@ -262,6 +312,22 @@ async function backupWorld() {
   showToast(`백업 완료: ${result.backupPath}`);
 }
 
+async function startTunnel() {
+  await api("/api/tunnel/start", {
+    method: "POST"
+  });
+  showToast("playit 터널 시작 요청 보냄");
+  await refreshStatus();
+}
+
+async function stopTunnel() {
+  await api("/api/tunnel/stop", {
+    method: "POST"
+  });
+  showToast("playit 터널 중지 요청 보냄");
+  await refreshStatus();
+}
+
 async function sendCommand(command) {
   await api("/api/command", {
     method: "POST",
@@ -311,6 +377,22 @@ function wireEvents() {
   els.backupButton.addEventListener("click", async () => {
     try {
       await backupWorld();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  els.tunnelStartButton.addEventListener("click", async () => {
+    try {
+      await startTunnel();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  els.tunnelStopButton.addEventListener("click", async () => {
+    try {
+      await stopTunnel();
     } catch (error) {
       showToast(error.message);
     }

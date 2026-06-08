@@ -22,7 +22,7 @@
       <section class="overview">
         <div class="metric">
           <span>서버</span>
-          <strong id="runningMetric">중지됨</strong>
+          <strong id="runningMetric">꺼짐</strong>
         </div>
         <div class="metric">
           <span>버전</span>
@@ -33,100 +33,132 @@
           <strong id="portMetric">25565</strong>
         </div>
         <div class="metric">
-          <span>LAN 주소</span>
+          <span>접속 주소</span>
           <strong id="addressMetric">-</strong>
         </div>
       </section>
 
       <section class="workspace">
-        <div class="panel controls-panel">
-          <div class="panel-head">
-            <h2>제어</h2>
-            <button class="icon-button" id="refreshButton" title="새로고침" aria-label="새로고침">↻</button>
-          </div>
-
-          <div class="button-row">
-            <button class="primary" id="startButton">시작</button>
-            <button class="danger" id="stopButton">중지</button>
-            <button id="downloadButton">서버 jar 받기</button>
-            <button id="backupButton">월드 백업</button>
-          </div>
-
-          <label class="check-row">
-            <input type="checkbox" id="eulaCheck" />
-            <span>시작 시 Minecraft EULA에 동의하고 `eula=true` 저장</span>
-          </label>
-
-          <div class="download" id="downloadBox" hidden>
-            <div class="download-top">
-              <span>다운로드</span>
-              <strong id="downloadPercent">0%</strong>
+        <div class="left-stack">
+          <div class="panel controls-panel">
+            <div class="panel-head">
+              <h2>서버 제어</h2>
+              <button class="icon-button" id="refreshButton" title="새로고침" aria-label="새로고침">↻</button>
             </div>
-            <div class="progress">
-              <span id="downloadBar"></span>
+
+            <div class="button-row">
+              <button class="primary" id="startButton">시작</button>
+              <button class="danger" id="stopButton">중지</button>
+              <button id="downloadButton">서버 jar 받기</button>
+              <button id="backupButton">월드 백업</button>
+            </div>
+
+            <label class="check-row">
+              <input type="checkbox" id="eulaCheck" />
+              <span>Minecraft EULA에 동의하고 시작할 때 <code>eula=true</code>를 저장합니다.</span>
+            </label>
+
+            <div class="download" id="downloadBox" hidden>
+              <div class="download-top">
+                <span>다운로드</span>
+                <strong id="downloadPercent">0%</strong>
+              </div>
+              <div class="progress">
+                <span id="downloadBar"></span>
+              </div>
             </div>
           </div>
+
+          <div class="panel publish-panel">
+            <div class="panel-head">
+              <h2>무료 공개</h2>
+              <span class="mini-status" id="tunnelStatus">확인 중</span>
+            </div>
+
+            <div class="publish-address">
+              <span>친구에게 줄 주소</span>
+              <strong id="publicAddress">아직 없음</strong>
+            </div>
+
+            <div class="button-row">
+              <button id="tunnelStartButton">playit 켜기</button>
+              <button id="tunnelStopButton">playit 끄기</button>
+            </div>
+
+            <div class="helper-grid">
+              <a class="helper-link" href="https://playit.gg/download" target="_blank" rel="noreferrer">playit 설치</a>
+              <a class="helper-link" href="https://playit.gg/account/tunnels" target="_blank" rel="noreferrer">터널 관리</a>
+            </div>
+
+            <div class="checklist">
+              <div class="check-item" id="javaCheck">Java 확인 중</div>
+              <div class="check-item" id="serverCheck">마크 서버 꺼짐</div>
+              <div class="check-item" id="playitCheck">playit 확인 중</div>
+            </div>
+
+            <div class="tunnel-log" id="tunnelLog"></div>
+          </div>
+
+          <form class="panel settings-panel" id="settingsForm">
+            <div class="panel-head">
+              <h2>설정</h2>
+              <button type="submit">저장</button>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>버전</span>
+                <select id="versionSelect" name="version">
+                  <option value="latest-release">최신 release</option>
+                </select>
+              </label>
+              <label>
+                <span>최소 RAM</span>
+                <input id="memoryMin" name="memoryMin" value="1G" />
+              </label>
+              <label>
+                <span>최대 RAM</span>
+                <input id="memoryMax" name="memoryMax" value="2G" />
+              </label>
+              <label>
+                <span>포트</span>
+                <input id="serverPort" name="server-port" inputmode="numeric" value="25565" />
+              </label>
+              <label>
+                <span>서버 이름</span>
+                <input id="motd" name="motd" value="Hosted by MC Java Host" />
+              </label>
+              <label>
+                <span>최대 인원</span>
+                <input id="maxPlayers" name="max-players" inputmode="numeric" value="10" />
+              </label>
+              <label>
+                <span>난이도</span>
+                <select id="difficulty" name="difficulty">
+                  <option value="peaceful">peaceful</option>
+                  <option value="easy">easy</option>
+                  <option value="normal">normal</option>
+                  <option value="hard">hard</option>
+                </select>
+              </label>
+              <label>
+                <span>게임모드</span>
+                <select id="gamemode" name="gamemode">
+                  <option value="survival">survival</option>
+                  <option value="creative">creative</option>
+                  <option value="adventure">adventure</option>
+                  <option value="spectator">spectator</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="toggle-grid">
+              <label><input type="checkbox" id="onlineMode" name="online-mode" /> 정품 인증</label>
+              <label><input type="checkbox" id="whiteList" name="white-list" /> 화이트리스트</label>
+              <label><input type="checkbox" id="pvp" name="pvp" /> PvP</label>
+            </div>
+          </form>
         </div>
-
-        <form class="panel settings-panel" id="settingsForm">
-          <div class="panel-head">
-            <h2>설정</h2>
-            <button type="submit">저장</button>
-          </div>
-
-          <div class="field-grid">
-            <label>
-              <span>버전</span>
-              <select id="versionSelect" name="version">
-                <option value="latest-release">최신 release</option>
-              </select>
-            </label>
-            <label>
-              <span>최소 RAM</span>
-              <input id="memoryMin" name="memoryMin" value="1G" />
-            </label>
-            <label>
-              <span>최대 RAM</span>
-              <input id="memoryMax" name="memoryMax" value="2G" />
-            </label>
-            <label>
-              <span>포트</span>
-              <input id="serverPort" name="server-port" inputmode="numeric" value="25565" />
-            </label>
-            <label>
-              <span>서버 이름</span>
-              <input id="motd" name="motd" value="Hosted by MC Java Host" />
-            </label>
-            <label>
-              <span>최대 인원</span>
-              <input id="maxPlayers" name="max-players" inputmode="numeric" value="10" />
-            </label>
-            <label>
-              <span>난이도</span>
-              <select id="difficulty" name="difficulty">
-                <option value="peaceful">peaceful</option>
-                <option value="easy">easy</option>
-                <option value="normal">normal</option>
-                <option value="hard">hard</option>
-              </select>
-            </label>
-            <label>
-              <span>게임모드</span>
-              <select id="gamemode" name="gamemode">
-                <option value="survival">survival</option>
-                <option value="creative">creative</option>
-                <option value="adventure">adventure</option>
-                <option value="spectator">spectator</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="toggle-grid">
-            <label><input type="checkbox" id="onlineMode" name="online-mode" /> 정품 인증</label>
-            <label><input type="checkbox" id="whiteList" name="white-list" /> 화이트리스트</label>
-            <label><input type="checkbox" id="pvp" name="pvp" /> PvP</label>
-          </div>
-        </form>
 
         <div class="panel console-panel">
           <div class="panel-head">

@@ -47,6 +47,16 @@ const state = {
   jarPath: null,
   lastExit: null,
   download: null,
+  tunnel: {
+    process: null,
+    status: "stopped",
+    command: null,
+    address: null,
+    claimUrl: null,
+    startedAt: null,
+    lastExit: null,
+    lines: []
+  },
   logs: [],
   nextLogId: 1
 };
@@ -333,6 +343,154 @@ function checkPort(port) {
   });
 }
 
+function getPlayitCommand() {
+  const candidates =
+    process.platform === "win32"
+      ? ["playit.exe", "playit-cli.exe", "playit", "playit-cli"]
+      : ["playit", "playit-cli"];
+
+  for (const command of candidates) {
+    const lookup =
+      process.platform === "win32"
+        ? spawnSync("where.exe", [command], { encoding: "utf8" })
+        : spawnSync("command", ["-v", command], { encoding: "utf8", shell: true });
+
+    if (lookup.status === 0) {
+      const resolved = String(lookup.stdout || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean);
+      return resolved || command;
+    }
+  }
+
+  return null;
+}
+
+function rememberTunnelLine(text) {
+  const lines = String(text).replace(/\r/g, "").split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    state.tunnel.lines.push({
+      time: new Date().toISOString(),
+      text: trimmed
+    });
+    if (state.tunnel.lines.length > 80) {
+      state.tunnel.lines.splice(0, state.tunnel.lines.length - 80);
+    }
+
+    const addressMatch = trimmed.match(
+      /((?:[a-z0-9-]+\.)+(?:ply\.gg|playit\.gg|join\.playit\.gg))(?::(\d{2,5}))?/i
+    );
+    if (addressMatch && !/https?:\/\//i.test(addressMatch[0])) {
+      state.tunnel.address = addressMatch[2]
+        ? `${addressMatch[1]}:${addressMatch[2]}`
+        : addressMatch[1];
+    }
+
+    const claimMatch = trimmed.match(/https?:\/\/[^\s]+/i);
+    if (claimMatch && /playit\.gg|ply\.gg/i.test(claimMatch[0])) {
+      state.tunnel.claimUrl = claimMatch[0];
+    }
+  }
+}
+
+function getTunnelSnapshot() {
+  const command = state.tunnel.command || getPlayitCommand();
+  return {
+    provider: "playit.gg",
+    installed: Boolean(command),
+    command,
+    running: Boolean(state.tunnel.process),
+    status: state.tunnel.status,
+    address: state.tunnel.address,
+    claimUrl: state.tunnel.claimUrl,
+    startedAt: state.tunnel.startedAt,
+    lastExit: state.tunnel.lastExit,
+    lines: state.tunnel.lines.slice(-20),
+    downloadUrl: "https://playit.gg/download"
+  };
+}
+
+async function startPlayitTunnel() {
+  if (state.tunnel.process) {
+    return getTunnelSnapshot();
+  }
+
+  const command = getPlayitCommand();
+  if (!command) {
+    const error = new Error("playit.gg agent is not installed. Install it, then try again.");
+    error.code = "PLAYIT_NOT_FOUND";
+    throw error;
+  }
+
+  appendLog("system", "Starting playit.gg tunnel agent...");
+  state.tunnel = {
+    ...state.tunnel,
+    status: "starting",
+    command,
+    address: null,
+    claimUrl: null,
+    startedAt: new Date().toISOString(),
+    lastExit: null,
+    lines: []
+  };
+
+  const child = spawn(command, [], {
+    cwd: ROOT,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+
+  state.tunnel.process = child;
+
+  child.stdout.on("data", (chunk) => {
+    state.tunnel.status = "running";
+    const text = chunk.toString("utf8");
+    rememberTunnelLine(text);
+    appendLog("tunnel", text);
+  });
+
+  child.stderr.on("data", (chunk) => {
+    const text = chunk.toString("utf8");
+    rememberTunnelLine(text);
+    appendLog("tunnel", text);
+  });
+
+  child.on("exit", (code, signal) => {
+    appendLog("system", `playit.gg tunnel stopped. Exit code: ${code ?? "none"}, signal: ${signal ?? "none"}.`);
+    state.tunnel.process = null;
+    state.tunnel.status = "stopped";
+    state.tunnel.startedAt = null;
+    state.tunnel.lastExit = {
+      code,
+      signal,
+      time: new Date().toISOString()
+    };
+  });
+
+  child.on("error", (error) => {
+    appendLog("stderr", error.message);
+    state.tunnel.process = null;
+    state.tunnel.status = "stopped";
+  });
+
+  return getTunnelSnapshot();
+}
+
+async function stopPlayitTunnel() {
+  if (!state.tunnel.process) {
+    return getTunnelSnapshot();
+  }
+
+  appendLog("system", "Stopping playit.gg tunnel agent...");
+  state.tunnel.status = "stopping";
+  state.tunnel.process.kill("SIGTERM");
+  return getTunnelSnapshot();
+}
+
 async function getStatusPayload() {
   const config = await loadConfig();
   const serverPort = Number(config.properties["server-port"] || 25565);
@@ -351,7 +509,8 @@ async function getStatusPayload() {
     eulaAccepted: await readEulaAccepted(),
     port: serverPort,
     portOpen: await checkPort(serverPort),
-    lanAddresses: getLanAddresses(serverPort)
+    lanAddresses: getLanAddresses(serverPort),
+    tunnel: getTunnelSnapshot()
   };
 }
 
@@ -518,6 +677,11 @@ async function handleApi(request, response, pathname) {
     return;
   }
 
+  if (request.method === "GET" && pathname === "/api/tunnel") {
+    sendJson(response, 200, getTunnelSnapshot());
+    return;
+  }
+
   if (request.method === "GET" && pathname === "/api/config") {
     const config = await loadConfig();
     config.properties = {
@@ -567,6 +731,16 @@ async function handleApi(request, response, pathname) {
   if (request.method === "POST" && pathname === "/api/stop") {
     const body = await parseBody(request);
     sendJson(response, 200, await stopServer(Boolean(body.force)));
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/tunnel/start") {
+    sendJson(response, 200, await startPlayitTunnel());
+    return;
+  }
+
+  if (request.method === "POST" && pathname === "/api/tunnel/stop") {
+    sendJson(response, 200, await stopPlayitTunnel());
     return;
   }
 
@@ -628,7 +802,7 @@ async function handleRequest(request, response) {
   }
 }
 
-async function main() {
+async function startHost() {
   await ensureDirs();
   const config = await loadConfig();
   await saveConfig(config);
@@ -637,12 +811,36 @@ async function main() {
     handleRequest(request, response);
   });
 
-  server.listen(PORT, HOST, () => {
-    console.log(`MC Java Host is running at http://${HOST}:${PORT}`);
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(PORT, HOST, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+
+  return {
+    server,
+    host: HOST,
+    port: PORT,
+    url: `http://${HOST}:${PORT}`
+  };
+}
+
+async function main() {
+  const host = await startHost();
+  console.log(`MC Java Host is running at ${host.url}`);
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
   });
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+module.exports = {
+  startHost,
+  HOST,
+  PORT
+};
